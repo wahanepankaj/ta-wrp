@@ -1,7 +1,10 @@
 package com.example;
 
+import eu.verdelhan.ta4j.Decimal;
 import eu.verdelhan.ta4j.Tick;
 import eu.verdelhan.ta4j.TimeSeries;
+import eu.verdelhan.ta4j.indicators.simple.ClosePriceIndicator;
+import eu.verdelhan.ta4j.indicators.trackers.RSIIndicator;
 import org.joda.time.DateTime;
 import yahoofinance.Stock;
 import yahoofinance.YahooFinance;
@@ -9,6 +12,7 @@ import yahoofinance.histquotes.HistoricalQuote;
 import yahoofinance.histquotes.Interval;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -16,15 +20,30 @@ import java.util.stream.Collectors;
 public class TajApplication {
 
     public static void main(String[] args) throws IOException {
-        TimeSeries series = getTimeSeries("INFY.NS", Calendar.getInstance());
-        System.out.println(series.getName());
 
+        final List<String> filtered = Arrays.asList(getTokens()).parallelStream()
+                .filter(symbol -> {
+                    TimeSeries series = null;
+                    try {
+                        series = getTimeSeries(symbol.trim(), Calendar.getInstance());
+                        final RSIIndicator rsiIndicator = getRsiIndicator(series, 14);
+                        return rsiIndicator.getValue(series.getEnd()).isGreaterThan(Decimal.valueOf(70d));
+                    } catch (Exception e) {
+                        return false;
+                    }
+                }).collect(Collectors.toList());
+
+        filtered.forEach(System.out::println);
+    }
+
+    public static RSIIndicator getRsiIndicator(TimeSeries series, int rsiPeriod) {
+        return new RSIIndicator(new ClosePriceIndicator(series), rsiPeriod);
     }
 
     public static TimeSeries getTimeSeries(String ticker, Calendar currentDate) throws IOException {
         final String symbol = ticker;
         Calendar from = Calendar.getInstance();
-        from.add(Calendar.MONTH, -12); // from 1 year ago
+        from.add(Calendar.MONTH, -2); // from at least 1 year ago
         Stock stock = YahooFinance.get(symbol);
         List<HistoricalQuote> googleHistQuotes = stock.getHistory(from, currentDate, Interval.DAILY);
         final List<Tick> ticks = googleHistQuotes.stream().map(quote -> new Tick(new DateTime(quote.getDate().getTime()), quote.getOpen().doubleValue(),
@@ -1605,4 +1624,3 @@ public class TajApplication {
         return tokens;
     }
 }
-
