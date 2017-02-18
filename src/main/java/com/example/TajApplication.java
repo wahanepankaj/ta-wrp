@@ -1,19 +1,8 @@
 package com.example;
 
-import eu.verdelhan.ta4j.*;
-import eu.verdelhan.ta4j.analysis.criteria.TotalProfitCriterion;
-import eu.verdelhan.ta4j.indicators.oscillators.StochasticOscillatorKIndicator;
-import eu.verdelhan.ta4j.indicators.simple.ClosePriceIndicator;
-import eu.verdelhan.ta4j.indicators.trackers.EMAIndicator;
-import eu.verdelhan.ta4j.indicators.trackers.MACDIndicator;
-import eu.verdelhan.ta4j.trading.rules.CrossedDownIndicatorRule;
-import eu.verdelhan.ta4j.trading.rules.CrossedUpIndicatorRule;
-import eu.verdelhan.ta4j.trading.rules.OverIndicatorRule;
-import eu.verdelhan.ta4j.trading.rules.UnderIndicatorRule;
+import eu.verdelhan.ta4j.Tick;
+import eu.verdelhan.ta4j.TimeSeries;
 import org.joda.time.DateTime;
-import org.springframework.boot.CommandLineRunner;
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
 import yahoofinance.Stock;
 import yahoofinance.YahooFinance;
 import yahoofinance.histquotes.HistoricalQuote;
@@ -24,77 +13,27 @@ import java.util.Calendar;
 import java.util.List;
 import java.util.stream.Collectors;
 
-@SpringBootApplication
-public class TajApplication implements CommandLineRunner {
+public class TajApplication {
 
-    public static void main(String[] args) {
-        SpringApplication.run(TajApplication.class, args);
+    public static void main(String[] args) throws IOException {
+        TimeSeries series = getTimeSeries("INFY.NS", Calendar.getInstance());
+        System.out.println(series.getName());
+
     }
 
-    @Override
-    public void run(String... strings) throws Exception {
-//        for (String token : getTokens()) {
-//            try{
-//
-//            analyze(token);}catch (Exception e){}
-        System.exit(0);
-    }
-
-    private void analyze(String token) throws IOException {
-        Stock stock = YahooFinance.get(token);
+    public static TimeSeries getTimeSeries(String ticker, Calendar currentDate) throws IOException {
+        final String symbol = ticker;
         Calendar from = Calendar.getInstance();
-        Calendar to = Calendar.getInstance();
-        from.add(Calendar.YEAR, -15); // from 1 year ago
-        List<HistoricalQuote> googleHistQuotes = stock.getHistory(from, to, Interval.DAILY);
+        from.add(Calendar.MONTH, -12); // from 1 year ago
+        Stock stock = YahooFinance.get(symbol);
+        List<HistoricalQuote> googleHistQuotes = stock.getHistory(from, currentDate, Interval.DAILY);
         final List<Tick> ticks = googleHistQuotes.stream().map(quote -> new Tick(new DateTime(quote.getDate().getTime()), quote.getOpen().doubleValue(),
                 quote.getHigh().doubleValue(),
                 quote.getLow().doubleValue(),
                 quote.getClose().doubleValue(), quote.getVolume())).sorted((t1, t2) -> t1.getEndTime().compareTo(t2.getEndTime()))
                 .collect(Collectors.toList());
-
-        TimeSeries series = new TimeSeries("infy_history", ticks);
-
-        // Building the trading strategy
-        Strategy strategy = buildStrategy(series);
-
-        // Running the strategy
-        TradingRecord tradingRecord = series.run(strategy);
-//        System.out.println("Number of trades for the strategy: " + tradingRecord.getTradeCount());
-//        tradingRecord.getTrades().forEach(trade -> System.out.println(trade.getExit().getPrice().minus(trade.getEntry().getPrice())));
-        // Analysis
-        System.out.println(token+" => " + new TotalProfitCriterion().calculate(series, tradingRecord));
+        return new TimeSeries(symbol + "-series", ticks);
     }
-
-    public static Strategy buildStrategy(TimeSeries series) {
-        if (series == null) {
-            throw new IllegalArgumentException("Series cannot be null");
-        }
-
-        ClosePriceIndicator closePrice = new ClosePriceIndicator(series);
-
-        // The bias is bullish when the shorter-moving average moves above the longer moving average.
-        // The bias is bearish when the shorter-moving average moves below the longer moving average.
-        EMAIndicator shortEma = new EMAIndicator(closePrice, 9);
-        EMAIndicator longEma = new EMAIndicator(closePrice, 26);
-
-        StochasticOscillatorKIndicator stochasticOscillK = new StochasticOscillatorKIndicator(series, 14);
-
-        MACDIndicator macd = new MACDIndicator(closePrice, 9, 26);
-        EMAIndicator emaMacd = new EMAIndicator(macd, 18);
-
-        // Entry rule
-        Rule entryRule = new OverIndicatorRule(shortEma, longEma) // Trend
-                .and(new CrossedDownIndicatorRule(stochasticOscillK, Decimal.valueOf(20))) // Signal 1
-                .and(new OverIndicatorRule(macd, emaMacd)); // Signal 2
-
-        // Exit rule
-        Rule exitRule = new UnderIndicatorRule(shortEma, longEma) // Trend
-                .and(new CrossedUpIndicatorRule(stochasticOscillK, Decimal.valueOf(80))) // Signal 1
-                .and(new UnderIndicatorRule(macd, emaMacd)); // Signal 2
-
-        return new Strategy(entryRule, exitRule);
-    }
-
 
     public static String[] getTokens() {
         String scrips =
